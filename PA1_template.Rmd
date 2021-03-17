@@ -6,20 +6,188 @@ output:
 ---
 
 
-## Loading and preprocessing the data
+## Accessing the file via URL and downloading it (if necessary)  
 
 
-
-## What is mean total number of steps taken per day?
-
-
-
-## What is the average daily activity pattern?
-
-
-
-## Imputing missing values
+```{r}
+## path <- "/home/benschnable/R/RepData_PeerAssessment1"
+## if (!dir.exists(path)) {dir.create(path)}
+## setwd(path)
+## url <- "https://github.com/sixpacksound/RepData_PeerAssessment1/blob/master/activity.zip"
+## download.file(url, destfile = "activity.zip")
+```
 
 
+## Loading and preprocessing the data (also loading libraries)  
 
-## Are there differences in activity patterns between weekdays and weekends?
+
+```{r results='hide', message=FALSE, warning=FALSE}
+unzip("activity.zip", junkpaths = TRUE)
+act <- read.csv("activity.csv", na.strings = "NA")
+library(dplyr)
+library(ggplot2)
+```
+
+
+## What is mean total number of steps taken per day?  
+
+
+First, find the total number of steps taken each day:
+
+
+```{r}
+sumsteps <- aggregate(act$steps, by=list(act$date), sum)
+names(sumsteps) <- c("Date", "Steps")
+```
+
+
+Then we can look at a histogram of the total steps each day:
+
+
+```{r}
+hist(sumsteps$Steps, xlab = "Number of steps", main = "Histogram of steps per day")
+abline(v = mean(sumsteps$Steps, na.rm = TRUE), lwd = 2, col = "red")
+```
+
+
+The red line shows the mean, and the calculated mean and median are:
+
+
+```{r collapse=TRUE}
+mean(sumsteps$Steps, na.rm = TRUE)
+median(sumsteps$Steps, na.rm = TRUE)
+```
+
+
+## What is the average daily activity pattern?  
+
+
+To make a time series plot of average steps per time interval, we'll use
+the dplyr package to group by interval and take the mean of the steps.
+
+
+```{r}
+tmp <- act %>%
+        select(steps, interval) %>%
+        group_by(interval) %>%
+        summarize(mean = mean(steps, na.rm = TRUE))
+
+plot(tmp$interval, tmp$mean, type="l", lwd = 2, col = "blue",
+        xlab = "Minute of each day", ylab = "Average steps taken",
+        main = "Average steps per minute of each day")
+abline(v = tmp$interval[which.max(tmp$mean)], lty = 2, lwd = 2, col = "darkgreen")
+```
+
+
+The dashed line shows the interval when the most steps are taken (on average)
+
+
+```{r}
+tmp$interval[which.max(tmp$mean)]
+```
+
+
+## Imputing missing values  
+
+
+First, we need to know how many rows of our dataframe have missing values.
+
+
+```{r}
+nrow(act[is.na(act), ])
+```
+
+
+We can use our previous dataframe *tmp* which has the average steps per interval,
+and create a new dataframe to match the dimensions of our dataframe with missing
+data.
+
+
+```{r}
+tmp2 <- sapply(tmp, rep.int, times = 61)
+tmp2 <- as.data.frame(tmp2)
+```
+
+
+Then we can iterate over the rows of the initial dataframe.  If the steps value
+is NA, then we will replace it with the calculated mean value for that particular
+interval.
+
+
+```{r}
+for (i in seq_along(act[ ,1])) { 
+        if (is.na(act$steps[i])) { act$steps[i] <- tmp2[i, 2]}
+}
+```
+
+
+Now we have a complete dataframe *act* and we can re-run our earlier code to
+reproduce the histogram and calculate the mean and median.
+
+
+```{r}
+newsteps <- aggregate(act$steps, by=list(act$date), sum)
+names(newsteps) <- c("Date", "Steps")
+
+hist(newsteps$Steps, xlab = "Number of steps", main = "Histogram of steps per day")
+abline(v = mean(sumsteps$Steps, na.rm = TRUE), lwd = 2, col = "red")
+```
+
+
+The red line shows the new mean, and the calculated values are:
+
+
+```{r collapse=TRUE}
+mean(newsteps$Steps)
+median(newsteps$Steps)
+```
+
+
+We see very little change to the median value, and no change to the mean value.
+However, our distribution is now skewed much more heavily towards the center
+compared to the initial histogram.
+
+
+## Are there differences in activity patterns between weekdays and weekends?  
+
+
+First, we will convert the **Date** column (currently a character vector) to a 
+Date vector so we can add a column of weekdays to our dataframe.  Then we will
+use those weekdays to create a two-level factor variable, separating our data
+into weekday and weekend labels.
+
+
+```{r}
+act$date <- as.Date.factor(act$date)
+act$weekday <- weekdays(act$date)
+act$daytype <- factor(act$weekday, levels = c("Monday", "Tuesday", "Wednesday",
+                                              "Thursday", "Friday", "Saturday",
+                                              "Sunday"), labels = c("Weekday",
+                                              "Weekday", "Weekday", "Weekday",
+                                              "Weekday", "Weekend", "Weekend"))
+```
+
+
+Then we can look at the average steps taken per interval of each of our new data
+labels.  The process is similar to the one before, only this time we will group
+the data by both daytype and interval so we can see the two adjacent plots.
+
+
+```{r results='hide', message=FALSE, warning=FALSE}
+tmp3 <- act %>%
+        select(steps, interval, daytype) %>%
+        group_by(daytype, interval) %>%
+        summarize(mean = mean(steps))
+```
+```{r}
+g <- ggplot(tmp3, aes(interval, mean, color = daytype))
+g + geom_line(lwd = 1) + facet_wrap(vars(daytype), nrow = 2, ncol = 1) +
+        theme_classic() + theme(legend.position = "none") + labs(x = "Interval",
+                                                            y = "Number of Steps")
+```
+
+
+Looking at the weekday and weekend data next to each other, we notice that there
+is one main peak (right around that 835 interval seen earlier) and a few scattered
+smaller peaks as the day goes on.  On the weekend, there are more but lower peaks,
+indicating a more even dispersal of activity throughout Saturday and Sunday.
